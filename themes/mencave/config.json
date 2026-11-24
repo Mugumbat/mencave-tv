@@ -1,5 +1,6 @@
 {
   "dock_apps": [
+    "com.todtv.tod",
     "com.amazon.amazonvideo.livingroom",
     "com.netflix.ninja",
     "com.apple.atve.androidtv.appletv",
@@ -9,7 +10,7 @@
     "io.github.sumyabazar1.weather"
   ],
   "fill_dock": false,
-  "columns": 7,
+  "columns": 8,
   "rows_below_dock": 1,
   "background_color": "#05070C",
   "wallpaper": true,
