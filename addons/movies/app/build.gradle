@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+// The TMDB key never sits in the code: CI passes it from the TMDB_API_KEY repository secret.
+def tmdbKey = providers.gradleProperty('tmdbKey')
+        .orElse(providers.environmentVariable('TMDB_API_KEY'))
+        .getOrElse('')
+
+android {
+    namespace 'io.github.mugumbat.movies'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'io.github.mugumbat.movies'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+        buildConfigField 'String', 'TMDB_KEY', "\"${tmdbKey}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

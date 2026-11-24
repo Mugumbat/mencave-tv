@@ -1,0 +1,56 @@
+name: Build TV apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-34 build-tools;34.0.0
+      - uses: gradle/actions/setup-gradle@v4
+
+      # One fixed signing key, so every new build installs over the last one on the TV.
+      - name: Signing key
+        run: mkdir -p ~/.android && cp ci/debug.keystore ~/.android/debug.keystore
+
+      - name: Launcher
+        working-directory: launcher
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+
+      - name: Weather add-on
+        working-directory: addons/weather
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+
+      - name: Verse add-on
+        working-directory: addons/verse
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+
+      - name: Movies add-on
+        working-directory: addons/movies
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+
+      - name: Collect APKs
+        run: |
+          mkdir -p out
+          cp launcher/app/build/outputs/apk/release/app-release.apk out/launcher.apk
+          cp addons/weather/app/build/outputs/apk/release/app-release.apk out/weather.apk
+          cp addons/verse/app/build/outputs/apk/release/app-release.apk out/verse.apk
+          cp addons/movies/app/build/outputs/apk/release/app-release.apk out/movies.apk
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mencave-apks
+          path: out/*.apk

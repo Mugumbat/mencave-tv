@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV banner: an open book under a warm dawn. Original artwork. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#FF1A1F2E" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#FF3A2F45" android:pathData="M0,100h320v80h-320z" />
+    <path android:fillColor="#FFE2B45A" android:pathData="M160,96m-36,0a36,36 0,1 1,72 0a36,36 0,1 1,-72 0" />
+    <path android:fillColor="#FFF5EFE2" android:pathData="M88,112l72,10l72,-10v40l-72,10l-72,-10z" />
+    <path android:fillColor="#FFC9BFAE" android:pathData="M159,122h2v40h-2z" />
+</vector>
