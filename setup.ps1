@@ -37,11 +37,38 @@ $env:TV_HOST = $TvHost
 $env:TV_ADB_BINARY = $Adb
 
 Step 'Python helper environment (first run only)'
-if (-not (Test-Path 'tools\venv\Scripts\python.exe')) {
-    if ($python) { & py -3 -m venv tools\venv } else { & python -m venv tools\venv }
-    if (-not (Test-Path 'tools\venv\Scripts\python.exe')) { throw 'Could not create the Python environment. Is Python 3 installed and on PATH?' }
-    & tools\venv\Scripts\python.exe -m pip install --quiet -r tools\requirements.txt
+# A Python that can actually build a venv: "embeddable" copies (a pythonXY.zip, no Lib folder) that some apps
+# install, e.g. C:\Python314, cannot, so each candidate is tested rather than trusted.
+function Test-Python($exe) {
+    if (-not $exe -or -not (Test-Path -LiteralPath $exe)) { return $false }
+    $ErrorActionPreference = 'Continue'
+    $null = & $exe -c "import venv, ensurepip, encodings" 2>$null
+    return ($LASTEXITCODE -eq 0)
 }
+$venvPy = 'tools\venv\Scripts\python.exe'
+if ((Test-Path $venvPy) -and -not (Test-Python (Resolve-Path $venvPy).Path)) {
+    Write-Host 'Removing a broken helper environment from an earlier run.'
+    Remove-Item -Recurse -Force 'tools\venv'
+}
+if (-not (Test-Path $venvPy)) {
+    $candidates = @()
+    $candidates += Get-ChildItem "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | ForEach-Object FullName
+    $candidates += Get-ChildItem "$env:ProgramFiles\Python3*\python.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | ForEach-Object FullName
+    if ($python) { $candidates += @(& py -0p 2>$null | ForEach-Object { ($_ -split '\s+')[-1] } | Where-Object { $_ -like '*.exe' }) }
+    $candidates += @(Get-Command python -All -ErrorAction SilentlyContinue | ForEach-Object Source | Where-Object { $_ -notlike '*WindowsApps*' })
+    $good = $candidates | Where-Object { Test-Python $_ } | Select-Object -First 1
+    if (-not $good) {
+        throw "No usable Python found (tried: $($candidates -join ', ')). Install Python 3 from python.org with 'Add python.exe to PATH' ticked, close this window, open a new one and run setup again. Nothing was changed on the TV."
+    }
+    Write-Host "Using $good"
+    # A PYTHONHOME or PYTHONPATH left by another app points Python at the wrong standard library.
+    Remove-Item Env:PYTHONHOME, Env:PYTHONPATH -ErrorAction SilentlyContinue
+    & $good -m venv tools\venv
+    if (-not (Test-Python (Resolve-Path $venvPy -ErrorAction SilentlyContinue).Path)) { throw 'Could not create the Python helper environment. Nothing was changed on the TV.' }
+    & $venvPy -m pip install --quiet -r tools\requirements.txt
+    if ($LASTEXITCODE -ne 0) { throw 'Installing the Python helper packages failed (internet?). Nothing was changed on the TV.' }
+}
+Remove-Item Env:PYTHONHOME, Env:PYTHONPATH -ErrorAction SilentlyContinue
 
 Step 'Backup of the TV''s current state'
 New-Item -ItemType Directory -Force backup | Out-Null
