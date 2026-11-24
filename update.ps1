@@ -13,9 +13,16 @@ $env:TV_HOST = $TvHost
 $env:TV_ADB_BINARY = $Adb
 
 Write-Host '== Installing the apps' -ForegroundColor Cyan
+# Push, then let the TV's own package manager install: "adb install" can sit waiting for an on-screen
+# Play Protect prompt on this TV and quietly not install.
 foreach ($apk in 'launcher', 'allapps', 'movies', 'verse', 'weather') {
-    if (Test-Path "apks\$apk.apk") { & $Adb -s $t install -r "apks\$apk.apk" | Out-Host }
+    if (-not (Test-Path "apks\$apk.apk")) { continue }
+    & $Adb -s $t push "apks\$apk.apk" "/data/local/tmp/mc-$apk.apk" | Out-Null
+    $out = (& $Adb -s $t shell "pm install -r /data/local/tmp/mc-$apk.apk; rm -f /data/local/tmp/mc-$apk.apk") -join ' '
+    Write-Host "$apk : $out"
+    if ($out -notmatch 'Success') { throw "$apk did not install: $out" }
 }
+& $Adb -s $t shell "dumpsys package com.gathin.tvhome | grep lastUpdateTime" | Out-Host
 
 Write-Host '== Which TOD package is installed (for the dock)' -ForegroundColor Cyan
 & $Adb -s $t shell "pm list packages | grep -iE 'tod|bein'" | Out-Host
