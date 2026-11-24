@@ -177,6 +177,10 @@ public class MoviesActivity extends Activity {
         column.addView(rowScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(300)));
 
+        TextView credit = text(12, 0xFF8A94A3, Typeface.DEFAULT);
+        credit.setText("Data from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.");
+        column.addView(credit);
+
         setContentView(root);
         styleTabs();
 
