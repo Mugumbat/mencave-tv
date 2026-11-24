@@ -37,5 +37,6 @@
   "app_library": true,
   "max_tiles": 8,
   "glass_style": "halo",
-  "always_show_names": true
+  "always_show_names": true,
+  "module_cards": false
 }
