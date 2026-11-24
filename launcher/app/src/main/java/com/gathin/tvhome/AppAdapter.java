@@ -169,7 +169,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     /** The smallest share of the width-only tile size that fitting rows_below_dock into the height may go to. */
-    static final float MIN_HEIGHT_FIT = 0.85f;
+    static final float MIN_HEIGHT_FIT = 0.70f;
 
     private final Context ctx;
     private final int rowsBelowDock;
@@ -236,7 +236,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.advancedEffects = cfg.animations && cfg.advancedEffects;
         this.showHomeSettings = cfg.showHomeSettingsShortcut;
         this.maxTiles = cfg.maxTiles;
-        this.showLibrary = LibraryApps.showPill(cfg.appLibrary, cfg.libraryButton, cfg.showLibraryPill);
+        // With max_tiles the All Apps tile opens the library, so the pill under the grid is left out.
+        this.showLibrary = cfg.maxTiles <= 0 && LibraryApps.showPill(cfg.appLibrary, cfg.libraryButton, cfg.showLibraryPill);
         this.reducedMotion = cfg.reducedMotion;
         this.focusOvershoot = cfg.focusOvershoot;
         this.rowsBelowDock = cfg.rowsBelowDock;
@@ -336,8 +337,15 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     new ComponentName(ctx, HomeSettingsActivity.class), null,
                     ctx.getDrawable(R.drawable.ic_home_settings), null, 0));
         }
-        // Men Cave (config max_tiles): Home shows only this many tiles; the rest stay in the App library.
-        if (maxTiles > 0 && !reordering && fresh.size() > maxTiles) fresh.subList(maxTiles, fresh.size()).clear();
+        // Men Cave (config max_tiles): Home shows only the configured favourites, at most this many; every other
+        // app stays one press away in the App library (the All Apps tile).
+        if (maxTiles > 0 && !reordering) {
+            for (java.util.Iterator<Entry> it = fresh.iterator(); it.hasNext(); ) {
+                Entry e = it.next();
+                if (e.kind != Entry.HOME_SETTINGS && !favourites.contains(e.pkg)) it.remove();
+            }
+            if (fresh.size() > maxTiles) fresh.subList(maxTiles, fresh.size()).clear();
+        }
         docked = 0;
         while (docked < fresh.size() && isDocked(fresh.get(docked))) docked++;
         emptySlots = dockRow && !reordering ? DockSlots.empty(docked, dockSize, fresh.size(), fillDock) : 0;

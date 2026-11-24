@@ -73,22 +73,11 @@ Focus-Tod; Shot 'shot-1080p-live.png'
 Start-Sleep -Seconds 3
 Focus-Tod; Shot 'shot-1080p-test.png'
 
-Write-Host '== Screenshots at native 4K (screen settings are put back afterwards)' -ForegroundColor Cyan
-try {
-    & $Adb -s $t shell wm size 3840x2160
-    & $Adb -s $t shell wm density 640
-    Start-Sleep -Seconds 8
-    & $Adb -s $t shell am start -n $homeAct --es mencave_test long | Out-Null
-    Start-Sleep -Seconds 4
-    Focus-Tod; Shot 'shot-4k-test.png'
-    & $Adb -s $t shell input keyevent KEYCODE_HOME
-    Start-Sleep -Seconds 4
-    Focus-Tod; Shot 'shot-4k-live.png'
-} finally {
-    & $Adb -s $t shell wm size 1920x1080
-    & $Adb -s $t shell wm density reset
-    & $Adb -s $t shell input keyevent KEYCODE_HOME
-}
+# No forced-4K pass: this TV always draws Home at 1920x1080 and scales it to the 4K panel (wm size below), so the
+# 1080p shots are what the 4K screen shows. Forcing native 4K drawing is not a mode the TV ever runs in.
+& $Adb -s $t shell input keyevent KEYCODE_HOME
+Write-Host '== Apps on Home (package check)' -ForegroundColor Cyan
+& $Adb -s $t shell "pm list packages | grep -iE 'appletv|disney|mugumbat|todtv|castle'" | Out-Host
 & $Adb -s $t shell wm size | Out-Host
 & $Adb -s $t shell wm density | Out-Host
 Write-Host 'Done. Tell Claude.' -ForegroundColor Green
