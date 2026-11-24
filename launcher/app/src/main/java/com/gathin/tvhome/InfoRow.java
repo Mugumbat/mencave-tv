@@ -240,7 +240,9 @@ final class InfoRow {
         io.execute(() -> {
             try {
                 JSONObject votd = new JSONObject(get(VERSE_URL)).getJSONObject("votd");
-                String text = clean(votd.optString("text", votd.optString("content", "")));
+                // The feed sometimes opens with a section heading in brackets ("[Spiritual Fullness in Christ]"),
+                // which is not part of the verse: drop it, keeping the opening quote mark.
+                String text = dropHeading(clean(votd.optString("text", votd.optString("content", ""))));
                 String ref = clean(votd.optString("display_ref", votd.optString("reference", "")));
                 String version = clean(votd.optString("version", "New International Version"));
                 if (text.isEmpty() || ref.isEmpty()) throw new IllegalStateException("empty verse");
@@ -260,7 +262,7 @@ final class InfoRow {
             verseRef.setText("");
             return;
         }
-        verseText.setText(text);
+        verseText.setText(dropHeading(text));
         String ref = prefs.getString("verse_ref", "") + " · " + prefs.getString("verse_version", "NIV");
         if (!LocalDate.now(DUBAI).toString().equals(prefs.getString("verse_day", ""))) {
             ref += "  (from " + prefs.getString("verse_day", "") + "; offline)";
@@ -494,6 +496,10 @@ final class InfoRow {
             timeValid = c.optBoolean("timeValid", true);
         } catch (Exception ignored) { }
         return date + " · " + (timeValid ? DateTimeFormatter.ofPattern("HH:mm", Locale.UK).format(z) + " Dubai" : "Time TBC");
+    }
+
+    private static String dropHeading(String verse) {
+        return verse.replaceFirst("^([\u201C\"]?)\\s*\\[[^\\]]{1,80}\\]\\s*", "$1");
     }
 
     private static String clean(String html) {
