@@ -84,9 +84,23 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 & $Adb -s "${TvHost}:5555" shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME > "backup\home-before-$stamp.txt"
 Write-Host "Saved in backup\"
 
-if (-not $SkipDebloat) {
-    Step 'Switching off Sony/Google trackers, promos and preloads (and the setup wizard that holds Home)'
+# A second run must not apply the main list again: its recovery record would then mark everything as
+# "already disabled" and undo would leave it off. tv.samba.ssm off means the list already ran.
+$disabledNow = (& $Adb -s "${TvHost}:5555" shell pm list packages -d) -join "`n"
+if (-not $SkipDebloat -and $disabledNow -notmatch 'package:tv\.samba\.ssm\b') {
+    Step 'Switching off Sony/Google trackers, promos and preloads'
     & .\tools\disable.ps1 -TvHost $TvHost ci\sony-vh2-debloat.txt
+}
+
+# The setup wizard also claims Home on this firmware. disable.ps1 skips it (and says so) while it still owns
+# the saved Wi-Fi network; forget and re-join the network in the TV's Settings, then run setup again.
+if ($disabledNow -notmatch 'package:com\.google\.android\.tungsten\.setupwraith\b') {
+    Step 'Switching off the Google TV setup wizard (it holds the Home button)'
+    try { & .\tools\disable.ps1 -TvHost $TvHost ci\setupwraith.txt } catch { Write-Host "$_" }
+    $wraith = (& $Adb -s "${TvHost}:5555" shell pm list packages -d com.google.android.tungsten.setupwraith) -join ''
+    if ($wraith -notmatch 'setupwraith') {
+        throw "The setup wizard still owns the TV's saved Wi-Fi, so it was left on and Home cannot move yet. On the TV: Settings > Network & Internet > your network > Forget network, then join it again. Then run setup again. Nothing else was changed in this step."
+    }
 }
 
 Step 'Installing Weather, Verse of the Day and Popular Now'

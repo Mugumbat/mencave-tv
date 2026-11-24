@@ -1,0 +1,2 @@
+# Google TV setup wizard: also claims Home on this firmware. Disabled on its own so undo can restore it on its own.
+com.google.android.tungsten.setupwraith
