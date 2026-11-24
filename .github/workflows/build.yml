@@ -23,30 +23,34 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # One fixed signing key, so every new build installs over the last one on the TV.
+      # One fixed signing key for every APK, so each new build installs over the last one on the TV.
+      # Passed explicitly: the Android setup action moves Gradle's default debug-key folder, which made every
+      # run sign with a fresh random key.
       - name: Signing key
-        run: mkdir -p ~/.android && cp ci/debug.keystore ~/.android/debug.keystore
+        run: |
+          echo "SIGN=-Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/ci/debug.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android" >> "$GITHUB_ENV"
 
       - name: Launcher
         working-directory: launcher
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease $SIGN
 
       - name: Weather add-on
         working-directory: addons/weather
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease $SIGN
 
       - name: Verse add-on
         working-directory: addons/verse
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease $SIGN
 
       - name: All Apps tile
         working-directory: addons/allapps
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease $SIGN
 
       - name: Movies add-on
         working-directory: addons/movies
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease $SIGN
 
       - name: Collect APKs
         run: |
@@ -57,6 +61,9 @@ jobs:
           cp addons/movies/app/build/outputs/apk/release/app-release.apk out/movies.apk
           cp addons/allapps/app/build/outputs/apk/release/app-release.apk out/allapps.apk
           ls -la out
+
+      - name: Signing certificates (all must match)
+        run: for f in out/*.apk; do echo "$f"; $ANDROID_HOME/build-tools/34.0.0/apksigner verify --print-certs "$f" | grep SHA-256; done
 
       - uses: actions/upload-artifact@v4
         with:

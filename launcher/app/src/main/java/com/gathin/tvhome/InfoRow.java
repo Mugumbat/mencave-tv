@@ -9,6 +9,7 @@ import android.os.Looper;
 import android.text.Html;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -46,6 +47,8 @@ final class InfoRow {
     private static final String RESULTS_URL =
             "https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/" + TEAM_ID + "/schedule";
     private static final String FIXTURES_URL = RESULTS_URL + "?fixture=true";
+    private static final String WEATHER_URL = "https://api.open-meteo.com/v1/forecast?latitude=25.2048&longitude=55.2708"
+            + "&current=temperature_2m,weather_code&timezone=Asia%2FDubai";
     private static final long FOOTBALL_EVERY_MS = 15 * 60_000L;
     private static final long TICK_MS = 60_000L;
 
@@ -62,6 +65,8 @@ final class InfoRow {
 
     private TextView verseText, verseRef;
     private TextView lastTeams, lastMeta, nextTeams, nextMeta, footStatus;
+    /** Dubai weather beside the date in the header (Open-Meteo, no key). */
+    private TextView weather;
 
     private long lastFootballFetch;
     private boolean running;
@@ -80,6 +85,7 @@ final class InfoRow {
         this.prefs = act.getSharedPreferences("mencave_info", Activity.MODE_PRIVATE);
         this.density = act.getResources().getDisplayMetrics().density;
         build(host);
+        addWeather();
         showVerse();
         showFootball(false);
     }
@@ -267,6 +273,13 @@ final class InfoRow {
         io.execute(() -> {
             boolean ok = false;
             try {
+                try {
+                    JSONObject cur = new JSONObject(get(WEATHER_URL)).getJSONObject("current");
+                    prefs.edit().putString("wx_temp", String.valueOf(Math.round(cur.getDouble("temperature_2m"))))
+                            .putInt("wx_code", cur.optInt("weather_code", -1)).apply();
+                } catch (Exception ignored) {
+                    // Weather is a nicety: keep the last reading.
+                }
                 String results = get(RESULTS_URL);
                 String fixtures = get(FIXTURES_URL);
                 // Only store answers that parse, so a broken response never replaces good data.
@@ -283,7 +296,49 @@ final class InfoRow {
         });
     }
 
+    private void addWeather() {
+        TextView date = act.findViewById(R.id.date);
+        if (date == null || !(date.getParent() instanceof LinearLayout)) return;
+        // A second line under the date, in the date's own style, so the header row keeps its width.
+        LinearLayout column = (LinearLayout) date.getParent();
+        weather = new TextView(act);
+        weather.setTextSize(TypedValue.COMPLEX_UNIT_PX, date.getTextSize() * 0.9f);
+        weather.setTextColor(date.getCurrentTextColor());
+        weather.setTypeface(date.getTypeface());
+        weather.setLetterSpacing(date.getLetterSpacing());
+        weather.setAllCaps(true);
+        weather.setSingleLine(true);
+        weather.setFocusable(false);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.topMargin = dp(4);
+        column.addView(weather, column.indexOfChild(date) + 1, p);
+        showWeather();
+    }
+
+    private void showWeather() {
+        if (weather == null) return;
+        String t = prefs.getString("wx_temp", "");
+        weather.setText(t.isEmpty() ? "" : "DUBAI  " + t + "°  " + sky(prefs.getInt("wx_code", -1)));
+        weather.setVisibility(t.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    /** WMO weather codes as Open-Meteo reports them. */
+    private static String sky(int code) {
+        if (code == 0) return "CLEAR";
+        if (code <= 2) return "PARTLY CLOUDY";
+        if (code == 3) return "CLOUDY";
+        if (code == 45 || code == 48) return "FOG";
+        if (code >= 51 && code <= 57) return "DRIZZLE";
+        if (code >= 61 && code <= 67) return "RAIN";
+        if (code >= 71 && code <= 77) return "SNOW";
+        if (code >= 80 && code <= 82) return "SHOWERS";
+        if (code >= 95) return "THUNDERSTORM";
+        return "";
+    }
+
     private void showFootball(boolean failed) {
+        showWeather();
         String results = prefs.getString("fb_results", "");
         String fixtures = prefs.getString("fb_fixtures", "");
         long time = prefs.getLong("fb_time", 0);
