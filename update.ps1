@@ -15,13 +15,31 @@ $env:TV_ADB_BINARY = $Adb
 Write-Host '== Installing the apps' -ForegroundColor Cyan
 # Push, then let the TV's own package manager install: "adb install" can sit waiting for an on-screen
 # Play Protect prompt on this TV and quietly not install.
-foreach ($apk in 'launcher', 'allapps', 'movies', 'verse', 'weather') {
+# The first builds were signed with a throwaway key; from now on every build uses one fixed key. An app still
+# carrying an old key is removed and installed fresh, once (its saved settings go with it).
+$pkgs = @{ launcher = 'com.gathin.tvhome'; allapps = 'io.github.mugumbat.allapps'; movies = 'io.github.mugumbat.movies';
+           verse = 'io.github.mugumbat.verse'; weather = 'io.github.sumyabazar1.weather' }
+foreach ($apk in 'allapps', 'movies', 'verse', 'weather', 'launcher') {
     if (-not (Test-Path "apks\$apk.apk")) { continue }
-    & $Adb -s $t push "apks\$apk.apk" "/data/local/tmp/mc-$apk.apk" | Out-Null
-    $out = (& $Adb -s $t shell "pm install -r /data/local/tmp/mc-$apk.apk; rm -f /data/local/tmp/mc-$apk.apk") -join ' '
+    $tmp = "/data/local/tmp/mc-$apk.apk"
+    & $Adb -s $t push "apks\$apk.apk" $tmp | Out-Null
+    $out = (& $Adb -s $t shell "pm install -r $tmp") -join ' '
+    if ($out -match 'INSTALL_FAILED_UPDATE_INCOMPATIBLE') {
+        Write-Host "$apk : old signing key on the TV, reinstalling it fresh"
+        if ($apk -eq 'launcher') {
+            # Uninstall and install in one shell line, so Home is without a launcher for a second at most. If the
+            # install fails, Google TV's own home is switched back on so the TV is never left without one.
+            $out = (& $Adb -s $t shell "pm uninstall $($pkgs[$apk]) >/dev/null; pm install $tmp || pm enable com.google.android.apps.tv.launcherx") -join ' '
+            & $Adb -s $t shell "pm grant com.gathin.tvhome android.permission.ACCESS_FINE_LOCATION; cmd package compile -m speed -f com.gathin.tvhome; am start -a android.intent.action.MAIN -c android.intent.category.HOME" | Out-Null
+        } else {
+            $out = (& $Adb -s $t shell "pm uninstall $($pkgs[$apk]) >/dev/null; pm install $tmp") -join ' '
+        }
+    }
+    & $Adb -s $t shell "rm -f $tmp" | Out-Null
     Write-Host "$apk : $out"
     if ($out -notmatch 'Success') { throw "$apk did not install: $out" }
 }
+& $Adb -s $t shell "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME" | Out-Host
 & $Adb -s $t shell "dumpsys package com.gathin.tvhome | grep lastUpdateTime" | Out-Host
 
 Write-Host '== Which TOD package is installed (for the dock)' -ForegroundColor Cyan
