@@ -115,6 +115,8 @@ $env:SKIP_BUILD = '1'
 & .\launcher\build-and-install.ps1 -TvHost $TvHost
 
 Step 'Pushing the Men Cave theme (photos, dock apps)'
+# build-and-install.ps1 moves into launcher\; come back to the repo root.
+Set-Location -LiteralPath $PSScriptRoot
 & .\tools\theme.ps1 -TvHost $TvHost themes\mencave
 
 Write-Host ''
