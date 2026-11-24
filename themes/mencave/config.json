@@ -36,5 +36,6 @@
   "show_greeting": false,
   "app_library": true,
   "max_tiles": 8,
-  "glass_style": "halo"
+  "glass_style": "halo",
+  "always_show_names": true
 }
