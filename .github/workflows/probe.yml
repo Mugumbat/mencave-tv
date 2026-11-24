@@ -1,0 +1,35 @@
+name: Probe data sources
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ESPN all competitions
+        run: |
+          for u in \
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/364/schedule" \
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/364/schedule?fixture=true" \
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/teams/364/schedule?fixture=true" \
+            "https://site.web.api.espn.com/apis/site/v2/sports/soccer/all/teams/364/schedule?fixture=true&region=gb&lang=en" ; do
+            echo "=== $u"
+            curl -s --max-time 20 "$u" | python3 -c "
+          import json,sys
+          try: d=json.load(sys.stdin)
+          except Exception as e: print('not json',e); sys.exit()
+          ev=d.get('events',[])
+          print('keys',list(d.keys())[:12],'events',len(ev))
+          for e in ev[:3]+ev[-3:]:
+              c=e['competitions'][0]
+              st=c.get('status',{}).get('type',{})
+              teams=[(t.get('homeAway'),t['team'].get('displayName'),(t.get('score') or {}).get('displayValue') if isinstance(t.get('score'),dict) else t.get('score'),t.get('shootoutScore')) for t in c['competitors']]
+              print(e.get('date'), st.get('completed'), st.get('description'), e.get('league',{}).get('name') if isinstance(e.get('league'),dict) else '', (e.get('seasonType') or {}).get('name'), c.get('timeValid'), teams)
+          "
+          done
+      - name: TheSportsDB free
+        run: |
+          for u in "https://www.thesportsdb.com/api/v1/json/123/eventslast.php?id=133602" "https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=133602"; do
+            echo "=== $u"; curl -s --max-time 20 "$u" | head -c 1500; echo
+          done
