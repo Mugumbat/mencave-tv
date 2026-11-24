@@ -22,7 +22,7 @@ function Step($text) { Write-Host ''; Write-Host "== $text" -ForegroundColor Cya
 
 # --- Checks -------------------------------------------------------------------------------------------------
 if (-not (Test-Path -LiteralPath $Adb)) { throw "adb.exe not found at $Adb. Pass -Adb <path to adb.exe>." }
-foreach ($apk in 'launcher', 'weather', 'verse', 'movies') {
+foreach ($apk in 'launcher', 'weather', 'verse', 'movies', 'allapps') {
     if (-not (Test-Path -LiteralPath "apks\$apk.apk")) { throw "apks\$apk.apk is missing. Unzip the mencave-apks download into an 'apks' folder here." }
 }
 $python = (Get-Command py -ErrorAction SilentlyContinue)
@@ -104,7 +104,7 @@ if ($disabledNow -notmatch 'package:com\.google\.android\.tungsten\.setupwraith\
 }
 
 Step 'Installing Weather, Verse of the Day and Popular Now'
-foreach ($apk in 'weather', 'verse', 'movies') {
+foreach ($apk in 'weather', 'verse', 'movies', 'allapps') {
     & $Adb -s "${TvHost}:5555" install -r "apks\$apk.apk" | Out-Host
 }
 

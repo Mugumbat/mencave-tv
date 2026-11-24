@@ -110,6 +110,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     static final String ACTION_VIEW_INPUTS = "com.android.tv.action.VIEW_INPUTS";
     /** Tiles per row and dock slots (res/values/config.xml, columns). Set in onCreate. */
     static int COLUMNS = 4;
+    /** Men Cave: verse of the day and Liverpool FC under the clock. */
+    private InfoRow infoRow;
     private boolean rtlAppGrid;
     private static final long MINUTE_MS = 60_000L;
     private static final long STATS_MS = 10_000L;
@@ -460,6 +462,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         density = getResources().getDisplayMetrics().density;
+        infoRow = new InfoRow(this, findViewById(R.id.infoRow));
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
@@ -1103,6 +1106,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        if (infoRow != null) infoRow.start();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1319,6 +1323,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        if (infoRow != null) infoRow.stop();
         // No UP reaches a paused Home, so a vendor-key hold it saw go down would still open its app later.
         // Only Home's own share is dropped: a key service that saw the same DOWN keeps its hold.
         RemoteKeys.release(this);
@@ -1398,6 +1403,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (infoRow != null) infoRow.destroy();
         ViewTreeObserver tree = getWindow().getDecorView().getViewTreeObserver();
         if (tree.isAlive()) tree.removeOnGlobalFocusChangeListener(glassFocusListener);
         RemoteKeys.release(this);

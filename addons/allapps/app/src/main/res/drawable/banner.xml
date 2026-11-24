@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "All Apps" tile: a 3x3 grid of rounded squares on dark glass. Original artwork. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#FF1C2430" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#FFF5F5F7" android:pathData="M118,48h22v22h-22z M149,48h22v22h-22z M180,48h22v22h-22z M118,79h22v22h-22z M149,79h22v22h-22z M180,79h22v22h-22z M118,110h22v22h-22z M149,110h22v22h-22z M180,110h22v22h-22z" />
+</vector>

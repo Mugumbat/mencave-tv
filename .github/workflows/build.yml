@@ -38,6 +38,10 @@ jobs:
         working-directory: addons/verse
         run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
 
+      - name: All Apps tile
+        working-directory: addons/allapps
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease
+
       - name: Movies add-on
         working-directory: addons/movies
         env:
@@ -51,6 +55,7 @@ jobs:
           cp addons/weather/app/build/outputs/apk/release/app-release.apk out/weather.apk
           cp addons/verse/app/build/outputs/apk/release/app-release.apk out/verse.apk
           cp addons/movies/app/build/outputs/apk/release/app-release.apk out/movies.apk
+          cp addons/allapps/app/build/outputs/apk/release/app-release.apk out/allapps.apk
           ls -la out
 
       - uses: actions/upload-artifact@v4

@@ -1,17 +1,14 @@
 {
   "dock_apps": [
-    "com.todtv.tod",
-    "com.amazon.amazonvideo.livingroom",
     "com.netflix.ninja",
-    "com.apple.atve.androidtv.appletv",
-    "com.disney.disneyplus",
-    "io.github.mugumbat.verse",
-    "io.github.mugumbat.movies",
-    "io.github.sumyabazar1.weather"
+    "com.amazon.amazonvideo.livingroom",
+    "com.google.android.youtube.tv",
+    "com.todtv.tod",
+    "io.github.mugumbat.allapps"
   ],
   "fill_dock": false,
-  "columns": 8,
-  "rows_below_dock": 1,
+  "columns": 5,
+  "rows_below_dock": 0,
   "background_color": "#05070C",
   "wallpaper": true,
   "wallpaper_rotation_minutes": 30,
@@ -30,5 +27,8 @@
   "app_glow": false,
   "fade_rows": true,
   "focus_overshoot": false,
-  "advanced_effects": true
+  "advanced_effects": true,
+  "dock_row": true,
+  "show_greeting": false,
+  "app_library": true
 }
