@@ -463,6 +463,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         setContentView(R.layout.activity_main);
         density = getResources().getDisplayMetrics().density;
         infoRow = new InfoRow(this, findViewById(R.id.infoRow));
+        infoRow.applyTestIntent(getIntent());
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
@@ -1070,21 +1071,38 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (infoRow != null) infoRow.applyTestIntent(intent);
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openLibraryIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
         if (gameDay != null && !stopped) gameDay.read();
         grid.scrollToPosition(0);
-        lastFocused = 0;
-        lastFocusedKey = adapter.getItemCount() > 0 ? adapter.keyAt(0) : null;
+        // Men Cave: Home starts on the app opened most recently, else the first favourite.
+        lastFocused = homeStartTile();
+        lastFocusedKey = adapter.getItemCount() > 0 ? adapter.keyAt(lastFocused) : null;
         if (stopped) {
             tileRefresh.onHomeAgain();
         } else {
             // Still on screen (the quick panel was over it, or Home was already in front): the tiles are current,
             // so only go back to the first one; rebuilding would replay the entrance animation for nothing.
-            grid.post(() -> focusTile(0));
+            grid.post(() -> focusTile(lastFocused));
         }
+    }
+
+    /** Men Cave: the most recently opened app among the tiles on Home, or 0 (the first favourite). */
+    private int homeStartTile() {
+        if (adapter == null) return 0;
+        int best = 0;
+        long bestAt = 0;
+        int n = Math.min(adapter.appCount(), 2 * COLUMNS);
+        for (int i = 0; i < n; i++) {
+            String pkg = adapter.packageAt(i);
+            if (pkg == null) continue;
+            long at = LastOpened.get(this, pkg);
+            if (at > bestAt) { bestAt = at; best = i; }
+        }
+        return best;
     }
 
     @Override

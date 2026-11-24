@@ -53,9 +53,12 @@ final class InfoRow {
     private static final long TICK_MS = 60_000L;
 
     private static final int WHITE = 0xFFFFFFFF;
-    private static final int SOFT = 0xFFD7DEE8;
-    private static final int LABEL = 0xFFF2C14E;   // warm gold labels, high contrast on the dark glass
-    private static final int RED = 0xFFFF6B6B;     // Liverpool section label
+    private static final int DETAIL = 0xFFE6EBF2;   // match details: near-white
+    private static final int DIM = 0xFFB8C2CF;
+    private static final int LFC_RED = 0xFFE31B23;  // Liverpool red, used only as a small accent
+    private static final int CARD = 0xE00A0E14;     // dark enough that the forest is only a faint texture
+    private static final float VERSE_MAX_SP = 15f;  // 30 px on a 1920x1080 canvas at the TV's density 2
+    private static final float VERSE_MIN_SP = 9f;
 
     private final Activity act;
     private final SharedPreferences prefs;
@@ -63,14 +66,17 @@ final class InfoRow {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final float density;
 
+    private LinearLayout verseBlock;
     private TextView verseText, verseRef;
-    private TextView lastTeams, lastMeta, nextTeams, nextMeta, footStatus;
-    /** Dubai weather beside the date in the header (Open-Meteo, no key). */
+    private TextView lastLine, lastMeta, nextLine, nextMeta, footStatus;
+    /** Dubai weather beside the clock, under the date (Open-Meteo, no key). */
     private TextView weather;
 
     private long lastFootballFetch;
     private boolean running;
     private boolean verseLoading, footballLoading;
+    /** Layout test (started from the laptop only): sample long texts, clearly labelled, until Home is pressed. */
+    private boolean testMode;
 
     private final Runnable tick = new Runnable() {
         @Override public void run() {
@@ -84,6 +90,7 @@ final class InfoRow {
         this.act = act;
         this.prefs = act.getSharedPreferences("mencave_info", Activity.MODE_PRIVATE);
         this.density = act.getResources().getDisplayMetrics().density;
+        layoutScreen(host);
         build(host);
         addWeather();
         showVerse();
@@ -108,7 +115,50 @@ final class InfoRow {
         io.shutdownNow();
     }
 
+    /**
+     * {@code am start -n com.gathin.tvhome/.MainActivity --es mencave_test long} fills both cards with long sample
+     * texts (marked LAYOUT TEST) to check the fit; any normal Home press goes back to live data.
+     */
+    void applyTestIntent(android.content.Intent intent) {
+        if (intent == null) return;
+        boolean want = "long".equals(intent.getStringExtra("mencave_test"));
+        if (want == testMode) return;
+        testMode = want;
+        showVerse();
+        showFootball(false);
+    }
+
     // ---------------------------------------------------------------- layout
+
+    /**
+     * Screen split on a 16:9 TV: header 12%, cards 38%, apps 50%. Sized from the real screen height so 1080p and
+     * 4K render the same proportions.
+     */
+    private void layoutScreen(ViewGroup host) {
+        int screenH = act.getResources().getDisplayMetrics().heightPixels;
+        View content = (View) host.getParent();
+        // Header: tighter top padding and a slightly smaller clock so the header fits the top 12%.
+        content.setPadding(content.getPaddingLeft(), Math.round(screenH * 0.025f), content.getPaddingRight(),
+                content.getPaddingBottom());
+        TextView clock = act.findViewById(R.id.clock);
+        if (clock != null) clock.setTextSize(TypedValue.COMPLEX_UNIT_PX, clock.getTextSize() * 0.82f);
+        ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) host.getLayoutParams();
+        lp.height = Math.round(screenH * 0.36f);
+        lp.topMargin = Math.round(screenH * 0.02f);
+        host.setLayoutParams(lp);
+
+        // A soft dark gradient behind the header, so white text reads over bright treetops.
+        if (content.getParent() instanceof ViewGroup) {
+            ViewGroup root = (ViewGroup) content.getParent();
+            View shade = new View(act);
+            shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[] {0xB3000000, 0x66000000, 0x00000000}));
+            shade.setFocusable(false);
+            shade.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            root.addView(shade, root.indexOfChild(content),
+                    new android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.round(screenH * 0.22f)));
+        }
+    }
 
     private void build(ViewGroup host) {
         host.removeAllViews();
@@ -117,85 +167,148 @@ final class InfoRow {
         LinearLayout row = new LinearLayout(act);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setBaselineAligned(false);
-        row.setGravity(Gravity.TOP);
         host.addView(row, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // Verse: 60%.
-        LinearLayout verse = panel();
+        // ---- Verse card, 60% ----
+        LinearLayout verse = card();
         LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 6f);
-        vp.setMarginEnd(dp(16));
+        vp.setMarginEnd(dp(14));
         row.addView(verse, vp);
-        verse.addView(label("VERSE OF THE DAY", LABEL));
+        verse.addView(label("VERSE OF THE DAY", 0xFFF2C14E));
+        // Quote and reference together, centred vertically in the rest of the card.
+        verseBlock = new LinearLayout(act);
+        verseBlock.setOrientation(LinearLayout.VERTICAL);
+        verseBlock.setGravity(Gravity.CENTER_VERTICAL);
+        verse.addView(verseBlock, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         verseText = new TextView(act);
         verseText.setTextColor(WHITE);
-        verseText.setTypeface(Typeface.SERIF);
-        verseText.setLineSpacing(0, 1.12f);
-        verseText.setIncludeFontPadding(false);
-        // The whole verse always shows: long verses shrink to fit the panel instead of being cut or scrolled.
-        verseText.setAutoSizeTextTypeUniformWithConfiguration(11, 24, 1, TypedValue.COMPLEX_UNIT_SP);
-        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        tp.topMargin = dp(8);
-        verse.addView(verseText, tp);
-        verseRef = text(13, SOFT, Typeface.DEFAULT_BOLD);
-        LinearLayout.LayoutParams rp = wrap();
-        rp.topMargin = dp(8);
-        verse.addView(verseRef, rp);
+        verseText.setTypeface(verseFace());
+        verseText.setLineSpacing(0, 1.25f);
+        verseText.setTextSize(TypedValue.COMPLEX_UNIT_SP, VERSE_MAX_SP);
+        verseBlock.addView(verseText, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        verseRef = text(11, DIM, Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        verseRef.setSingleLine(true);
+        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        rp.topMargin = dp(10);
+        verseBlock.addView(verseRef, rp);
+        verseBlock.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) main.post(this::fitVerse);
+        });
 
-        // Liverpool: 40%.
-        LinearLayout foot = panel();
+        // ---- Liverpool card, 40%: two compact rows with a divider ----
+        LinearLayout foot = card();
         row.addView(foot, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 4f));
-        foot.addView(label("LIVERPOOL FC", RED));
 
-        TextView lastLabel = label("LAST RESULT", LABEL);
-        LinearLayout.LayoutParams ll = wrap();
-        ll.topMargin = dp(8);
-        foot.addView(lastLabel, ll);
-        lastTeams = fitLine(16, WHITE);
-        foot.addView(lastTeams, fullWidth(dp(2), 24));
-        lastMeta = fitLine(12, SOFT);
-        foot.addView(lastMeta, fullWidth(dp(1), 18));
+        LinearLayout last = section();
+        foot.addView(last, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        last.addView(redLabel("LIVERPOOL FC  ·  LAST RESULT"));
+        lastLine = fitLine(17);
+        last.addView(lastLine, lineParams(26, 6));
+        lastMeta = fitLine(11);
+        lastMeta.setTextColor(DETAIL);
+        last.addView(lastMeta, lineParams(16, 4));
 
-        TextView nextLabel = label("NEXT FIXTURE", LABEL);
-        LinearLayout.LayoutParams nl = wrap();
-        nl.topMargin = dp(10);
-        foot.addView(nextLabel, nl);
-        nextTeams = fitLine(16, WHITE);
-        foot.addView(nextTeams, fullWidth(dp(2), 24));
-        nextMeta = fitLine(12, SOFT);
-        foot.addView(nextMeta, fullWidth(dp(1), 18));
+        View divider = new View(act);
+        divider.setBackgroundColor(0x33FFFFFF);
+        LinearLayout.LayoutParams dv = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                Math.max(1, Math.round(density)));
+        foot.addView(divider, dv);
 
-        footStatus = text(10, 0xFFAEB8C6, Typeface.DEFAULT);
-        LinearLayout.LayoutParams sp = wrap();
-        sp.topMargin = dp(6);
-        foot.addView(footStatus, sp);
+        LinearLayout next = section();
+        foot.addView(next, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        next.addView(redLabel("NEXT FIXTURE"));
+        nextLine = fitLine(17);
+        next.addView(nextLine, lineParams(26, 6));
+        nextMeta = fitLine(11);
+        nextMeta.setTextColor(DETAIL);
+        next.addView(nextMeta, lineParams(16, 4));
+        footStatus = text(9, DIM, Typeface.DEFAULT);
+        footStatus.setSingleLine(true);
+        next.addView(footStatus, lineParams(14, 4));
     }
 
-    private LinearLayout panel() {
+    private static Typeface verseFace() {
+        Typeface serifItalic = Typeface.create(Typeface.SERIF, Typeface.ITALIC);
+        if (android.os.Build.VERSION.SDK_INT >= 28) return Typeface.create(serifItalic, 500, true);   // medium
+        return serifItalic;
+    }
+
+    /** Largest verse size up to 30 px that shows the whole quote and reference without scrolling or cutting. */
+    private void fitVerse() {
+        CharSequence text = verseText.getText();
+        int w = verseBlock.getWidth() - verseText.getPaddingLeft() - verseText.getPaddingRight();
+        int avail = verseBlock.getHeight() - verseRef.getHeight() - dp(10);
+        if (w <= 0 || avail <= 0 || text.length() == 0) return;
+        android.text.TextPaint paint = new android.text.TextPaint(verseText.getPaint());
+        float sp = VERSE_MAX_SP;
+        float scaled = act.getResources().getDisplayMetrics().scaledDensity;
+        for (; sp > VERSE_MIN_SP; sp -= 0.5f) {
+            paint.setTextSize(sp * scaled);
+            android.text.StaticLayout layout = android.text.StaticLayout.Builder
+                    .obtain(text, 0, text.length(), paint, w)
+                    .setLineSpacing(0, 1.25f)
+                    .setIncludePad(true)
+                    .build();
+            if (layout.getHeight() <= avail) break;
+        }
+        if (Math.abs(verseText.getTextSize() - sp * scaled) > 0.5f) {
+            verseText.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+        }
+    }
+
+    private LinearLayout card() {
         LinearLayout p = new LinearLayout(act);
         p.setOrientation(LinearLayout.VERTICAL);
-        p.setPadding(dp(20), dp(14), dp(20), dp(14));
+        p.setPadding(dp(22), dp(16), dp(22), dp(14));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xB3101620);          // dark glass, so text stays readable over any photo
+        bg.setColor(CARD);
         bg.setCornerRadius(dp(16));
-        bg.setStroke(Math.max(1, dp(1) / 2), 0x33FFFFFF);
+        bg.setStroke(Math.max(1, Math.round(density / 2)), 0x26FFFFFF);
         p.setBackground(bg);
         p.setFocusable(false);
         return p;
     }
 
+    private LinearLayout section() {
+        LinearLayout s = new LinearLayout(act);
+        s.setOrientation(LinearLayout.VERTICAL);
+        s.setGravity(Gravity.CENTER_VERTICAL);
+        return s;
+    }
+
     private TextView label(String s, int color) {
-        TextView t = text(11, color, Typeface.DEFAULT_BOLD);
+        TextView t = text(10, color, Typeface.create("sans-serif-medium", Typeface.BOLD));
         t.setText(s);
         t.setLetterSpacing(0.16f);
         return t;
     }
 
-    /** One line that shrinks for a long team name rather than ending in an ellipsis. */
-    private TextView fitLine(int maxSp, int color) {
-        TextView t = text(maxSp, color, Typeface.DEFAULT);
-        t.setMaxLines(1);
-        t.setAutoSizeTextTypeUniformWithConfiguration(9, maxSp, 1, TypedValue.COMPLEX_UNIT_SP);
+    /** Section title: a short red bar and the words in white, so the red stays a small accent. */
+    private TextView redLabel(String s) {
+        TextView t = label(s, WHITE);
+        GradientDrawable bar = new GradientDrawable();
+        bar.setColor(LFC_RED);
+        bar.setCornerRadius(dp(2));
+        bar.setSize(dp(4), dp(11));
+        t.setCompoundDrawablesRelativeWithIntrinsicBounds(bar, null, null, null);
+        t.setCompoundDrawablePadding(dp(8));
         return t;
+    }
+
+    /** One line that shrinks for a long name instead of ending in an ellipsis. */
+    private TextView fitLine(int maxSp) {
+        TextView t = text(maxSp, WHITE, Typeface.DEFAULT);
+        t.setMaxLines(1);
+        t.setAutoSizeTextTypeUniformWithConfiguration(8, maxSp, 1, TypedValue.COMPLEX_UNIT_SP);
+        return t;
+    }
+
+    private LinearLayout.LayoutParams lineParams(int heightDp, int topDp) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(heightDp));
+        p.topMargin = dp(topDp);
+        return p;
     }
 
     private TextView text(int sp, int color, Typeface face) {
@@ -206,16 +319,6 @@ final class InfoRow {
         t.setIncludeFontPadding(false);
         t.setFocusable(false);
         return t;
-    }
-
-    private LinearLayout.LayoutParams wrap() {
-        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    }
-
-    private LinearLayout.LayoutParams fullWidth(int top, int heightDp) {
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(heightDp));
-        p.topMargin = top;
-        return p;
     }
 
     private int dp(int v) {
@@ -256,18 +359,31 @@ final class InfoRow {
     }
 
     private void showVerse() {
-        String text = prefs.getString("verse_text", "");
-        if (text.isEmpty()) {
-            verseText.setText("Loading today's verse…");
-            verseRef.setText("");
-            return;
+        if (testMode) {
+            // Esther 8:9, King James Version (public domain): the longest verse in the Bible.
+            verseText.setText("“Then were the king’s scribes called at that time in the third month, that is, the "
+                    + "month Sivan, on the three and twentieth day thereof; and it was written according to all that Mordecai "
+                    + "commanded unto the Jews, and to the lieutenants, and the deputies and rulers of the provinces which are "
+                    + "from India unto Ethiopia, an hundred twenty and seven provinces, unto every province according to the "
+                    + "writing thereof, and unto every people after their language, and to the Jews according to their "
+                    + "writing, and according to their language.”");
+            verseRef.setText("LAYOUT TEST  ·  Esther 8:9  ·  King James Version");
+        } else {
+            String text = prefs.getString("verse_text", "");
+            if (text.isEmpty()) {
+                verseText.setText("Loading today’s verse…");
+                verseRef.setText("");
+            } else {
+                verseText.setText(dropHeading(text));
+                String ref = prefs.getString("verse_ref", "") + "  ·  " + prefs.getString("verse_version", "NIV");
+                if (!LocalDate.now(DUBAI).toString().equals(prefs.getString("verse_day", ""))) {
+                    ref += "  (saved " + prefs.getString("verse_day", "") + ", offline)";
+                }
+                verseRef.setText(ref);
+            }
         }
-        verseText.setText(dropHeading(text));
-        String ref = prefs.getString("verse_ref", "") + " · " + prefs.getString("verse_version", "NIV");
-        if (!LocalDate.now(DUBAI).toString().equals(prefs.getString("verse_day", ""))) {
-            ref += "  (from " + prefs.getString("verse_day", "") + "; offline)";
-        }
-        verseRef.setText(ref);
+        verseText.setTextSize(TypedValue.COMPLEX_UNIT_SP, VERSE_MAX_SP);
+        main.post(this::fitVerse);
     }
 
     private void fetchFootball() {
@@ -341,45 +457,87 @@ final class InfoRow {
 
     private void showFootball(boolean failed) {
         showWeather();
+        if (testMode) {
+            lastLine.setText(scoreText("Borussia Mönchengladbach", "3", "3", "Liverpool", "4–5"));
+            lastMeta.setText("Wed 18 Nov 2026  ·  UEFA Europa Conference League Knockout Round Play-offs");
+            nextLine.setText(fixtureText("Wolverhampton Wanderers Football Club", false));
+            nextMeta.setText("Away  ·  Sat 28 Nov  ·  Time TBC  ·  English Football League Cup");
+            footStatus.setText("LAYOUT TEST  ·  sample data  ·  press Home for live scores");
+            return;
+        }
         String results = prefs.getString("fb_results", "");
         String fixtures = prefs.getString("fb_fixtures", "");
         long time = prefs.getLong("fb_time", 0);
         if (results.isEmpty() && fixtures.isEmpty()) {
-            lastTeams.setText(failed ? "Can't reach the fixtures feed" : "Loading…");
+            lastLine.setText(failed ? "Can’t reach the fixtures feed" : "Loading…");
             lastMeta.setText("");
-            nextTeams.setText("");
+            nextLine.setText("");
             nextMeta.setText("");
-            footStatus.setText(failed ? "Will try again in 15 minutes" : "");
+            footStatus.setText(failed ? "Trying again in 15 minutes" : "");
             return;
         }
         try {
             JSONObject last = pick(results, true);
             if (last != null) {
-                lastTeams.setText(scoreLine(last));
-                lastMeta.setText(dateOnly(last) + " · " + competition(last));
+                JSONObject h = side(last, "home"), a = side(last, "away");
+                String hs = shootout(h), as = shootout(a);
+                String pens = !hs.isEmpty() && !as.isEmpty() && !(hs.equals("0") && as.equals("0")) ? hs + "–" + as : "";
+                lastLine.setText(scoreText(teamName(h), score(h), score(a), teamName(a), pens));
+                lastMeta.setText(dateOnly(last) + "  ·  " + competition(last));
             } else {
-                lastTeams.setText("No completed match found");
+                lastLine.setText("No completed match found");
                 lastMeta.setText("");
             }
             JSONObject next = pick(fixtures, false);
             if (next != null) {
-                nextTeams.setText(fixtureLine(next));
-                nextMeta.setText(kickoff(next) + " · " + competition(next));
+                JSONObject h = side(next, "home"), a = side(next, "away");
+                boolean home = "Liverpool".equals(teamName(h));
+                nextLine.setText(fixtureText(home ? teamName(a) : teamName(h), home));
+                nextMeta.setText((home ? "Home" : "Away") + "  ·  " + kickoff(next) + "  ·  " + competition(next));
             } else {
-                nextTeams.setText("No fixture scheduled yet");
+                nextLine.setText("No fixture scheduled yet");
                 nextMeta.setText("");
             }
         } catch (Exception e) {
-            lastTeams.setText("Fixtures data unreadable");
+            lastLine.setText("Fixtures data unreadable");
             lastMeta.setText("");
-            nextTeams.setText("");
+            nextLine.setText("");
             nextMeta.setText("");
         }
         boolean stale = failed || System.currentTimeMillis() - time > 2 * FOOTBALL_EVERY_MS + TICK_MS;
         footStatus.setText(stale && time > 0
-                ? "Feed unavailable · last updated " + DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.UK)
+                ? "Feed unavailable  ·  last updated " + DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.UK)
                         .format(Instant.ofEpochMilli(time).atZone(DUBAI))
                 : "");
+    }
+
+    /** "Home  4 – 0  Away": the score is the boldest, largest part; a shootout follows in brackets. */
+    private static CharSequence scoreText(String home, String hs, String as, String away, String pens) {
+        android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder();
+        b.append(home).append("   ");
+        int s0 = b.length();
+        b.append(hs).append(" – ").append(as);
+        int s1 = b.length();
+        b.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), s0, s1, 0);
+        b.setSpan(new android.text.style.RelativeSizeSpan(1.3f), s0, s1, 0);
+        b.append("   ").append(away);
+        if (!pens.isEmpty()) {
+            int p0 = b.length();
+            b.append("  (").append(pens).append(" pens)");
+            b.setSpan(new android.text.style.RelativeSizeSpan(0.8f), p0, b.length(), 0);
+        }
+        return b;
+    }
+
+    /** The opponent leads, in medium weight; home or away is said once, in the line under it. */
+    private static CharSequence fixtureText(String opponent, boolean home) {
+        android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder();
+        b.append(home ? "vs  " : "at  ");
+        b.setSpan(new android.text.style.ForegroundColorSpan(DIM), 0, b.length(), 0);
+        int o = b.length();
+        b.append(opponent);
+        b.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), o, b.length(), 0);
+        return b;
     }
 
     /**
@@ -453,22 +611,7 @@ final class InfoRow {
         return String.valueOf(s);
     }
 
-    private static String scoreLine(JSONObject e) throws Exception {
-        JSONObject h = side(e, "home"), a = side(e, "away");
-        String line = teamName(h) + "  " + score(h) + " – " + score(a) + "  " + teamName(a);
-        String hs = shootout(h), as = shootout(a);
-        if (!hs.isEmpty() && !as.isEmpty() && !(hs.equals("0") && as.equals("0"))) {
-            line += "  (pens " + hs + "–" + as + ")";
-        }
-        return line;
-    }
 
-    private static String fixtureLine(JSONObject e) throws Exception {
-        JSONObject h = side(e, "home"), a = side(e, "away");
-        boolean home = "Liverpool".equals(teamName(h));
-        String opponent = home ? teamName(a) : teamName(h);
-        return (home ? "vs " : "at ") + opponent + (home ? "  (home)" : "  (away)");
-    }
 
     private static String competition(JSONObject e) {
         JSONObject league = e.optJSONObject("league");

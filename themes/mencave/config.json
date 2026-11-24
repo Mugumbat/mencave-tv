@@ -4,11 +4,14 @@
     "com.amazon.amazonvideo.livingroom",
     "com.google.android.youtube.tv",
     "com.todtv.tod",
+    "com.apple.atve.androidtv.appletv",
+    "com.disney.disneyplus",
+    "io.github.mugumbat.movies",
     "io.github.mugumbat.allapps"
   ],
   "fill_dock": false,
-  "columns": 5,
-  "rows_below_dock": 0,
+  "columns": 4,
+  "rows_below_dock": 1,
   "background_color": "#05070C",
   "wallpaper": true,
   "wallpaper_rotation_minutes": 30,
@@ -25,10 +28,12 @@
   "icon_only_inputs": false,
   "ambient_glow": false,
   "app_glow": false,
-  "fade_rows": true,
+  "fade_rows": false,
   "focus_overshoot": false,
   "advanced_effects": true,
-  "dock_row": true,
+  "dock_row": false,
   "show_greeting": false,
-  "app_library": true
+  "app_library": true,
+  "max_tiles": 8,
+  "glass_style": "halo"
 }

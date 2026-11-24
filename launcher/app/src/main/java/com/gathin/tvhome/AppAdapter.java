@@ -202,6 +202,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final Set<String> libraryPreload;
     private final boolean animations;
     private final boolean advancedEffects;
+    /** Men Cave: most tiles shown on Home (config max_tiles), 0 for no limit. */
+    private final int maxTiles;
     private final boolean showLibrary;
     /** Packages with a leanback entry at the last reload(): their tiles launch with the leanback category. */
     private Set<String> leanbackPackages = new HashSet<>();
@@ -233,6 +235,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.animations = cfg.animations;
         this.advancedEffects = cfg.animations && cfg.advancedEffects;
         this.showHomeSettings = cfg.showHomeSettingsShortcut;
+        this.maxTiles = cfg.maxTiles;
         this.showLibrary = LibraryApps.showPill(cfg.appLibrary, cfg.libraryButton, cfg.showLibraryPill);
         this.reducedMotion = cfg.reducedMotion;
         this.focusOvershoot = cfg.focusOvershoot;
@@ -333,6 +336,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     new ComponentName(ctx, HomeSettingsActivity.class), null,
                     ctx.getDrawable(R.drawable.ic_home_settings), null, 0));
         }
+        // Men Cave (config max_tiles): Home shows only this many tiles; the rest stay in the App library.
+        if (maxTiles > 0 && !reordering && fresh.size() > maxTiles) fresh.subList(maxTiles, fresh.size()).clear();
         docked = 0;
         while (docked < fresh.size() && isDocked(fresh.get(docked))) docked++;
         emptySlots = dockRow && !reordering ? DockSlots.empty(docked, dockSize, fresh.size(), fillDock) : 0;

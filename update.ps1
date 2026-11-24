@@ -49,12 +49,46 @@ Write-Host '== Pushing the theme' -ForegroundColor Cyan
 & .\tools\theme.ps1 -TvHost $TvHost themes\mencave
 Set-Location -LiteralPath $PSScriptRoot
 
-Write-Host '== Home screenshot (waits 20 s for the verse and fixtures to load)' -ForegroundColor Cyan
+# Moves focus to TOD (row 1, column 4) wherever it starts: down past the last row, up one, far left, right three.
+function Focus-Tod {
+    foreach ($k in 'DOWN','DOWN','DOWN','UP','LEFT','LEFT','LEFT','LEFT','RIGHT','RIGHT','RIGHT') {
+        & $Adb -s $t shell input keyevent "KEYCODE_DPAD_$k"
+        Start-Sleep -Milliseconds 350
+    }
+    Start-Sleep -Seconds 2
+}
+function Shot($name) {
+    & $Adb -s $t shell screencap -p /sdcard/mc-shot.png
+    & $Adb -s $t pull /sdcard/mc-shot.png "$name" | Out-Null
+    & $Adb -s $t shell rm /sdcard/mc-shot.png
+    Write-Host "saved $name"
+}
+$home = 'com.gathin.tvhome/.MainActivity'
+
+Write-Host '== Screenshots at 1080p (live, then the long-text layout test)' -ForegroundColor Cyan
 & $Adb -s $t shell input keyevent KEYCODE_HOME
 Start-Sleep -Seconds 20
-& $Adb -s $t shell screencap -p /sdcard/mencave-home.png
-& $Adb -s $t pull /sdcard/mencave-home.png "screenshot-home.png" | Out-Host
-& $Adb -s $t shell rm /sdcard/mencave-home.png
+Focus-Tod; Shot 'shot-1080p-live.png'
+& $Adb -s $t shell am start -n $home --es mencave_test long | Out-Null
+Start-Sleep -Seconds 3
+Focus-Tod; Shot 'shot-1080p-test.png'
+
+Write-Host '== Screenshots at native 4K (screen settings are put back afterwards)' -ForegroundColor Cyan
+try {
+    & $Adb -s $t shell wm size 3840x2160
+    & $Adb -s $t shell wm density 640
+    Start-Sleep -Seconds 8
+    & $Adb -s $t shell am start -n $home --es mencave_test long | Out-Null
+    Start-Sleep -Seconds 4
+    Focus-Tod; Shot 'shot-4k-test.png'
+    & $Adb -s $t shell input keyevent KEYCODE_HOME
+    Start-Sleep -Seconds 4
+    Focus-Tod; Shot 'shot-4k-live.png'
+} finally {
+    & $Adb -s $t shell wm size 1920x1080
+    & $Adb -s $t shell wm density reset
+    & $Adb -s $t shell input keyevent KEYCODE_HOME
+}
 & $Adb -s $t shell wm size | Out-Host
 & $Adb -s $t shell wm density | Out-Host
-Write-Host 'Done. Screenshot saved as screenshot-home.png in this folder.' -ForegroundColor Green
+Write-Host 'Done. Tell Claude.' -ForegroundColor Green
