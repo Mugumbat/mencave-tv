@@ -41,12 +41,18 @@ Step 'Python helper environment (first run only)'
 # install, e.g. C:\Python314, cannot, so each candidate is tested rather than trusted.
 function Test-Python($exe) {
     if (-not $exe -or -not (Test-Path -LiteralPath $exe)) { return $false }
+    # Embeddable Pythons carry a pythonXY._pth file next to python.exe; skip them outright.
+    $dir = Split-Path -Parent $exe
+    if (Get-ChildItem -LiteralPath $dir -Filter 'python*._pth' -ErrorAction SilentlyContinue) { return $false }
     $ErrorActionPreference = 'Continue'
-    $null = & $exe -c "import venv, ensurepip, encodings" 2>$null
+    # -I: the repo's tools run Python isolated, so test it the same way.
+    $null = & $exe -I -c "import venv, ensurepip, encodings" 2>$null
     return ($LASTEXITCODE -eq 0)
 }
 $venvPy = 'tools\venv\Scripts\python.exe'
-if ((Test-Path $venvPy) -and -not (Test-Python (Resolve-Path $venvPy).Path)) {
+$venvCfg = 'tools\venv\pyvenv.cfg'
+$venvBaseBad = (Test-Path $venvCfg) -and ((Get-Content $venvCfg -Raw) -match '(?im)^home\s*=\s*(.+)$') -and (Get-ChildItem -LiteralPath $Matches[1].Trim() -Filter 'python*._pth' -ErrorAction SilentlyContinue)
+if ((Test-Path $venvPy) -and ($venvBaseBad -or -not (Test-Python (Resolve-Path $venvPy).Path))) {
     Write-Host 'Removing a broken helper environment from an earlier run.'
     Remove-Item -Recurse -Force 'tools\venv'
 }
