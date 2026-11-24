@@ -63,13 +63,13 @@ function Shot($name) {
     & $Adb -s $t shell rm /sdcard/mc-shot.png
     Write-Host "saved $name"
 }
-$home = 'com.gathin.tvhome/.MainActivity'
+$homeAct = 'com.gathin.tvhome/.MainActivity'
 
 Write-Host '== Screenshots at 1080p (live, then the long-text layout test)' -ForegroundColor Cyan
 & $Adb -s $t shell input keyevent KEYCODE_HOME
 Start-Sleep -Seconds 20
 Focus-Tod; Shot 'shot-1080p-live.png'
-& $Adb -s $t shell am start -n $home --es mencave_test long | Out-Null
+& $Adb -s $t shell am start -n $homeAct --es mencave_test long | Out-Null
 Start-Sleep -Seconds 3
 Focus-Tod; Shot 'shot-1080p-test.png'
 
@@ -78,7 +78,7 @@ try {
     & $Adb -s $t shell wm size 3840x2160
     & $Adb -s $t shell wm density 640
     Start-Sleep -Seconds 8
-    & $Adb -s $t shell am start -n $home --es mencave_test long | Out-Null
+    & $Adb -s $t shell am start -n $homeAct --es mencave_test long | Out-Null
     Start-Sleep -Seconds 4
     Focus-Tod; Shot 'shot-4k-test.png'
     & $Adb -s $t shell input keyevent KEYCODE_HOME
