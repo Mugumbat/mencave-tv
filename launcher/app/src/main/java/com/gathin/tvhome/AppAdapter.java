@@ -319,7 +319,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             // The owner's own order first; tiles it does not know (new installs) follow by the rule below.
             int saved = Order.compare(savedRanks, a.component.flattenToShortString(), b.component.flattenToShortString());
             if (saved != 0) return saved;
-            int fa = favourites.indexOf(a.pkg), fb = favourites.indexOf(b.pkg);
+            int fa = favIndex(a), fb = favIndex(b);
             if (fa >= 0 || fb >= 0) {
                 if (fa < 0) return 1;
                 if (fb < 0) return -1;
@@ -342,7 +342,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (maxTiles > 0 && !reordering) {
             for (java.util.Iterator<Entry> it = fresh.iterator(); it.hasNext(); ) {
                 Entry e = it.next();
-                if (e.kind != Entry.HOME_SETTINGS && !favourites.contains(e.pkg)) it.remove();
+                if (e.kind != Entry.HOME_SETTINGS && favIndex(e) < 0) it.remove();
             }
             if (fresh.size() > maxTiles) fresh.subList(maxTiles, fresh.size()).clear();
         }
@@ -587,6 +587,20 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     @Override public int getItemViewType(int position) { return isLibraryAt(position) ? 1 : 0; }
 
+    /**
+     * Men Cave: position of an app in dock_apps. An entry may name the package or, for an app whose package
+     * name is not known, "label:" plus the name shown under its tile (case ignored).
+     */
+    private int favIndex(Entry e) {
+        int i = favourites.indexOf(e.pkg);
+        if (i >= 0 || e.label == null) return i;
+        for (int k = 0; k < favourites.size(); k++) {
+            String f = favourites.get(k);
+            if (f.regionMatches(true, 0, "label:", 0, 6) && f.substring(6).trim().equalsIgnoreCase(e.label.trim())) return k;
+        }
+        return -1;
+    }
+
     boolean containsPackage(String pkg) {
         for (Entry entry : items) if (entry.pkg.equals(pkg)) return true;
         return false;
@@ -608,7 +622,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      * the owner moved into the dock stays there (#499); else a dock_apps entry.
      */
     private boolean isDocked(Entry e) {
-        if (savedDocked < 0) return favourites.contains(e.pkg);
+        if (savedDocked < 0) return favIndex(e) >= 0;
         Integer rank = savedRanks.get(e.component.flattenToShortString());
         return rank != null && rank < savedDocked;
     }

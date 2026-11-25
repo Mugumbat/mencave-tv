@@ -75,6 +75,12 @@ final class InfoRow {
     private long lastFootballFetch;
     private boolean running;
     private boolean verseLoading, footballLoading;
+    private long lastVerseTry;
+    private LinearLayout verseCard;
+    private GradientDrawable verseBg;
+    private Runnable onVerseDown, onVerseFocus;
+    private static final long VERSE_RETRY_MS = 30 * 60_000L;
+    private static final int HISTORY_MAX = 60;
     /** Layout test (started from the laptop only): sample long texts, clearly labelled, until Home is pressed. */
     private boolean testMode;
 
@@ -101,6 +107,7 @@ final class InfoRow {
         if (running) return;
         running = true;
         lastFootballFetch = 0;   // "refresh on launch": every return to Home asks again
+        lastVerseTry = 0;
         main.removeCallbacks(tick);
         main.post(tick);
     }
@@ -126,6 +133,17 @@ final class InfoRow {
         testMode = want;
         showVerse();
         showFootball(false);
+    }
+
+    /** Down from the verse card returns to the apps; focus on the card hides the grid's glass highlight. */
+    void setNavigation(Runnable onDown, Runnable onFocus) {
+        this.onVerseDown = onDown;
+        this.onVerseFocus = onFocus;
+    }
+
+    /** Up from the first app row, under the verse card, lands here. */
+    boolean focusVerse() {
+        return verseCard != null && verseCard.requestFocus();
     }
 
     // ---------------------------------------------------------------- layout
@@ -163,7 +181,7 @@ final class InfoRow {
     private void build(ViewGroup host) {
         host.removeAllViews();
         host.setFocusable(false);
-        host.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        host.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
         LinearLayout row = new LinearLayout(act);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setBaselineAligned(false);
@@ -171,6 +189,29 @@ final class InfoRow {
 
         // ---- Verse card, 60% ----
         LinearLayout verse = card();
+        verseCard = verse;
+        verseBg = (GradientDrawable) verse.getBackground();
+        verse.setFocusable(true);
+        verse.setClickable(true);
+        verse.setContentDescription("Verse of the day. Press OK to read it full screen.");
+        verse.setOnClickListener(v -> openReader());
+        verse.setOnFocusChangeListener((v, has) -> {
+            verseBg.setStroke(has ? dp(3) : Math.max(1, Math.round(density / 2)), has ? 0xFFFFFFFF : 0x26FFFFFF);
+            v.animate().scaleX(has ? 1.015f : 1f).scaleY(has ? 1.015f : 1f).setDuration(150).start();
+            if (has && onVerseFocus != null) onVerseFocus.run();
+        });
+        verse.setOnKeyListener((v, code, ev) -> {
+            if (ev.getAction() != android.view.KeyEvent.ACTION_DOWN) {
+                return code == android.view.KeyEvent.KEYCODE_DPAD_DOWN || code == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                        || code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
+            }
+            if (code == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (onVerseDown != null) onVerseDown.run();
+                return true;
+            }
+            // Left and Right stay on the card: the Liverpool card beside it is read-only.
+            return code == android.view.KeyEvent.KEYCODE_DPAD_LEFT || code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
+        });
         LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 6f);
         vp.setMarginEnd(dp(14));
         row.addView(verse, vp);
@@ -201,9 +242,10 @@ final class InfoRow {
         LinearLayout foot = card();
         row.addView(foot, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 4f));
 
+        foot.addView(redLabel("LIVERPOOL FC"));
         LinearLayout last = section();
         foot.addView(last, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        last.addView(redLabel("LIVERPOOL FC  ·  LAST RESULT"));
+        last.addView(label("LAST RESULT", DIM));
         lastLine = fitLine(17);
         last.addView(lastLine, lineParams(26, 6));
         lastMeta = fitLine(11);
@@ -218,7 +260,7 @@ final class InfoRow {
 
         LinearLayout next = section();
         foot.addView(next, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        next.addView(redLabel("NEXT FIXTURE"));
+        next.addView(label("NEXT FIXTURE", DIM));
         nextLine = fitLine(17);
         next.addView(nextLine, lineParams(26, 6));
         nextMeta = fitLine(11);
@@ -328,9 +370,14 @@ final class InfoRow {
     // ---------------------------------------------------------------- refresh
 
     private void refreshIfDue() {
+        // Bible Gateway's day starts at US Eastern midnight (about 09:00 in Dubai), so a fetch early in the Dubai
+        // morning still returns yesterday's verse. Keep asking every 30 minutes until the feed's own date is today.
         String today = LocalDate.now(DUBAI).toString();
-        if (!today.equals(prefs.getString("verse_day", "")) && !verseLoading) fetchVerse(today);
         long now = System.currentTimeMillis();
+        if (!today.equals(prefs.getString("verse_day", "")) && !verseLoading && now - lastVerseTry >= VERSE_RETRY_MS) {
+            lastVerseTry = now;
+            fetchVerse(today);
+        }
         if (now - lastFootballFetch >= FOOTBALL_EVERY_MS && !footballLoading) {
             lastFootballFetch = now;
             fetchFootball();
@@ -349,13 +396,122 @@ final class InfoRow {
                 String ref = clean(votd.optString("display_ref", votd.optString("reference", "")));
                 String version = clean(votd.optString("version", "New International Version"));
                 if (text.isEmpty() || ref.isEmpty()) throw new IllegalStateException("empty verse");
+                // The verse's own date, as the feed states it.
+                String day = today;
+                try {
+                    day = LocalDate.of(Integer.parseInt(votd.getString("year").trim()),
+                            Integer.parseInt(votd.getString("month").trim()),
+                            Integer.parseInt(votd.getString("day").trim())).toString();
+                } catch (Exception ignored) {
+                    // No date in the answer: take it as today's.
+                }
+                final String feedDay = day;
                 prefs.edit().putString("verse_text", text).putString("verse_ref", ref)
-                        .putString("verse_version", version).putString("verse_day", today).apply();
+                        .putString("verse_version", version).putString("verse_day", feedDay).apply();
+                remember(feedDay, text, ref, version);
                 main.post(() -> { verseLoading = false; showVerse(); });
             } catch (Exception e) {
                 main.post(() -> { verseLoading = false; showVerse(); });
             }
         });
+    }
+
+    /** Keeps the last 60 days' verses on the TV for the reader, newest first. */
+    private synchronized void remember(String day, String text, String ref, String version) {
+        try {
+            JSONArray old = new JSONArray(prefs.getString("verse_history", "[]"));
+            JSONArray out = new JSONArray();
+            out.put(new JSONObject().put("d", day).put("t", text).put("r", ref).put("v", version));
+            for (int i = 0; i < old.length() && out.length() < HISTORY_MAX; i++) {
+                JSONObject o = old.getJSONObject(i);
+                if (!day.equals(o.optString("d"))) out.put(o);
+            }
+            prefs.edit().putString("verse_history", out.toString()).apply();
+        } catch (Exception ignored) {
+            // History is a nicety; today's verse is already saved.
+        }
+    }
+
+    private JSONArray history() {
+        try {
+            JSONArray h = new JSONArray(prefs.getString("verse_history", "[]"));
+            if (h.length() == 0 && !prefs.getString("verse_text", "").isEmpty()) {
+                h.put(new JSONObject().put("d", prefs.getString("verse_day", "")).put("t", prefs.getString("verse_text", ""))
+                        .put("r", prefs.getString("verse_ref", "")).put("v", prefs.getString("verse_version", "NIV")));
+            }
+            return h;
+        } catch (Exception e) {
+            return new JSONArray();
+        }
+    }
+
+    // ---------------------------------------------------------------- full-screen reader
+
+    /** OK on the verse card: the verse large and full screen; Left/Right step through earlier days; Back closes. */
+    private void openReader() {
+        if (testMode) return;
+        final JSONArray h = history();
+        if (h.length() == 0) return;
+        final android.app.Dialog d = new android.app.Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        LinearLayout page = new LinearLayout(act);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setGravity(Gravity.CENTER_VERTICAL);
+        page.setPadding(dp(80), dp(40), dp(80), dp(32));
+        page.setBackgroundColor(0xF2070A10);
+        final TextView date = label("", 0xFFF2C14E);
+        date.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        page.addView(date);
+        final TextView big = new TextView(act);
+        big.setTextColor(WHITE);
+        big.setTypeface(verseFace());
+        big.setLineSpacing(0, 1.3f);
+        big.setAutoSizeTextTypeUniformWithConfiguration(14, 30, 1, TypedValue.COMPLEX_UNIT_SP);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        bp.topMargin = dp(18);
+        bp.bottomMargin = dp(18);
+        page.addView(big, bp);
+        final TextView ref = text(15, DETAIL, Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        page.addView(ref);
+        final TextView hint = text(11, DIM, Typeface.DEFAULT);
+        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hp.topMargin = dp(22);
+        page.addView(hint, hp);
+        final int[] at = {0};
+        final Runnable show = () -> {
+            try {
+                JSONObject o = h.getJSONObject(at[0]);
+                String day = o.optString("d");
+                String when;
+                try {
+                    LocalDate ld = LocalDate.parse(day);
+                    when = ld.equals(LocalDate.now(DUBAI)) ? "TODAY" : ld.equals(LocalDate.now(DUBAI).minusDays(1))
+                            ? "YESTERDAY" : DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK).format(ld).toUpperCase(Locale.UK);
+                } catch (Exception e) {
+                    when = "";
+                }
+                date.setText("VERSE OF THE DAY" + (when.isEmpty() ? "" : "  ·  " + when));
+                big.setText(dropHeading(o.optString("t")));
+                ref.setText(o.optString("r") + "  ·  " + o.optString("v"));
+                String older = at[0] < h.length() - 1 ? "\u25C0  Earlier" : "";
+                String newer = at[0] > 0 ? "Later  \u25B6" : "";
+                hint.setText((older + (older.isEmpty() || newer.isEmpty() ? "" : "      ") + newer
+                        + "      Back to close").trim());
+            } catch (Exception ignored) {
+            }
+        };
+        d.setContentView(page);
+        d.setOnKeyListener((dialog, code, ev) -> {
+            if (ev.getAction() != android.view.KeyEvent.ACTION_DOWN) return false;
+            if (code == android.view.KeyEvent.KEYCODE_DPAD_LEFT && at[0] < h.length() - 1) { at[0]++; show.run(); return true; }
+            if (code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT && at[0] > 0) { at[0]--; show.run(); return true; }
+            if (code == android.view.KeyEvent.KEYCODE_DPAD_CENTER || code == android.view.KeyEvent.KEYCODE_ENTER) {
+                dialog.dismiss();
+                return true;
+            }
+            return false;
+        });
+        show.run();
+        d.show();
     }
 
     private void showVerse() {
@@ -376,8 +532,12 @@ final class InfoRow {
             } else {
                 verseText.setText(dropHeading(text));
                 String ref = prefs.getString("verse_ref", "") + "  ·  " + prefs.getString("verse_version", "NIV");
-                if (!LocalDate.now(DUBAI).toString().equals(prefs.getString("verse_day", ""))) {
-                    ref += "  (saved " + prefs.getString("verse_day", "") + ", offline)";
+                try {
+                    // The feed's day starts about 09:00 Dubai time, so yesterday's verse is normal until then.
+                    if (LocalDate.parse(prefs.getString("verse_day", "")).isBefore(LocalDate.now(DUBAI).minusDays(1))) {
+                        ref += "  (saved " + prefs.getString("verse_day", "") + ", offline)";
+                    }
+                } catch (Exception ignored) {
                 }
                 verseRef.setText(ref);
             }

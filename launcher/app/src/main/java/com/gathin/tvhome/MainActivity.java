@@ -464,6 +464,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         density = getResources().getDisplayMetrics().density;
         infoRow = new InfoRow(this, findViewById(R.id.infoRow));
         infoRow.applyTestIntent(getIntent());
+        infoRow.setNavigation(() -> focusTile(Math.max(0, Math.min(lastFocused, COLUMNS - 1))), this::hideGlass);
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
@@ -2508,6 +2509,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+            // Men Cave: the first row's three left columns sit under the verse card, so Up goes there.
+            if (position < COLUMNS && infoRow != null) {
+                int col = rtlAppGrid ? COLUMNS - 1 - position : position;
+                if (col < COLUMNS - 1 && infoRow.focusVerse()) {
+                    lastFocused = position;
+                    return true;
+                }
+            }
             if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
             target = position - COLUMNS;
         } else {
