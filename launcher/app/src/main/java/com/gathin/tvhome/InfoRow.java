@@ -78,7 +78,9 @@ final class InfoRow {
     private long lastVerseTry;
     private LinearLayout verseCard;
     private GradientDrawable verseBg;
-    private Runnable onVerseDown, onVerseFocus;
+    private Runnable onVerseDown, onVerseFocus, onFootDown;
+    private LinearLayout footCard;
+    private GradientDrawable footBg;
     private static final long VERSE_RETRY_MS = 30 * 60_000L;
     private static final int HISTORY_MAX = 60;
     /** Layout test (started from the laptop only): sample long texts, clearly labelled, until Home is pressed. */
@@ -136,9 +138,15 @@ final class InfoRow {
     }
 
     /** Down from the verse card returns to the apps; focus on the card hides the grid's glass highlight. */
-    void setNavigation(Runnable onDown, Runnable onFocus) {
-        this.onVerseDown = onDown;
+    void setNavigation(Runnable onVerseDown, Runnable onFootDown, Runnable onFocus) {
+        this.onVerseDown = onVerseDown;
+        this.onFootDown = onFootDown;
         this.onVerseFocus = onFocus;
+    }
+
+    /** Up from the first app row under the Liverpool card lands here. */
+    boolean focusFootball() {
+        return footCard != null && footCard.requestFocus();
     }
 
     /** Up from the first app row, under the verse card, lands here. */
@@ -209,7 +217,10 @@ final class InfoRow {
                 if (onVerseDown != null) onVerseDown.run();
                 return true;
             }
-            // Left and Right stay on the card: the Liverpool card beside it is read-only.
+            if (code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT && footCard != null) {
+                footCard.requestFocus();
+                return true;
+            }
             return code == android.view.KeyEvent.KEYCODE_DPAD_LEFT || code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
         });
         LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 6f);
@@ -240,6 +251,31 @@ final class InfoRow {
 
         // ---- Liverpool card, 40%: two compact rows with a divider ----
         LinearLayout foot = card();
+        footCard = foot;
+        footBg = (GradientDrawable) foot.getBackground();
+        foot.setFocusable(true);
+        foot.setClickable(true);
+        foot.setContentDescription("Liverpool FC. Press OK for recent results and upcoming fixtures.");
+        foot.setOnClickListener(v -> openFixtures());
+        foot.setOnFocusChangeListener((v, has) -> {
+            footBg.setStroke(has ? dp(3) : Math.max(1, Math.round(density / 2)), has ? 0xFFFFFFFF : 0x26FFFFFF);
+            v.animate().scaleX(has ? 1.015f : 1f).scaleY(has ? 1.015f : 1f).setDuration(150).start();
+            if (has && onVerseFocus != null) onVerseFocus.run();
+        });
+        foot.setOnKeyListener((v, code, ev) -> {
+            boolean nav = code == android.view.KeyEvent.KEYCODE_DPAD_DOWN || code == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                    || code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
+            if (ev.getAction() != android.view.KeyEvent.ACTION_DOWN) return nav;
+            if (code == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (onFootDown != null) onFootDown.run();
+                return true;
+            }
+            if (code == android.view.KeyEvent.KEYCODE_DPAD_LEFT && verseCard != null) {
+                verseCard.requestFocus();
+                return true;
+            }
+            return nav;
+        });
         row.addView(foot, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 4f));
 
         foot.addView(redLabel("LIVERPOOL FC"));
@@ -698,6 +734,174 @@ final class InfoRow {
         b.append(opponent);
         b.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), o, b.length(), 0);
         return b;
+    }
+
+    // ---------------------------------------------------------------- Liverpool full screen
+
+    /** OK on the Liverpool card: the last six results and the next six fixtures, all competitions. Back closes. */
+    private void openFixtures() {
+        if (testMode) return;
+        java.util.List<JSONObject> results, fixtures;
+        try {
+            results = matches(prefs.getString("fb_results", ""), true, 6);
+            fixtures = matches(prefs.getString("fb_fixtures", ""), false, 6);
+        } catch (Exception e) {
+            return;
+        }
+        if (results.isEmpty() && fixtures.isEmpty()) return;
+        android.app.Dialog d = new android.app.Dialog(act, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        LinearLayout page = new LinearLayout(act);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(64), dp(36), dp(64), dp(28));
+        page.setBackgroundColor(0xF2070A10);
+        page.addView(redLabel("LIVERPOOL FC"));
+
+        LinearLayout cols = new LinearLayout(act);
+        cols.setOrientation(LinearLayout.HORIZONTAL);
+        cols.setBaselineAligned(false);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        cp.topMargin = dp(18);
+        page.addView(cols, cp);
+
+        LinearLayout left = new LinearLayout(act);
+        left.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        lp.setMarginEnd(dp(36));
+        cols.addView(left, lp);
+        left.addView(label("RECENT RESULTS", 0xFFF2C14E));
+        for (JSONObject e : results) left.addView(resultRow(e));
+
+        LinearLayout right = new LinearLayout(act);
+        right.setOrientation(LinearLayout.VERTICAL);
+        cols.addView(right, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        right.addView(label("UPCOMING FIXTURES", 0xFFF2C14E));
+        for (JSONObject e : fixtures) right.addView(fixtureRow(e));
+
+        long time = prefs.getLong("fb_time", 0);
+        TextView foot = text(10, DIM, Typeface.DEFAULT);
+        foot.setText((time > 0 ? "Updated " + DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.UK)
+                .format(Instant.ofEpochMilli(time).atZone(DUBAI)) + " Dubai  ·  " : "") + "Times in Dubai  ·  Back to close");
+        page.addView(foot);
+        d.setContentView(page);
+        d.setOnKeyListener((dialog, code, ev) -> {
+            if (ev.getAction() == android.view.KeyEvent.ACTION_DOWN
+                    && (code == android.view.KeyEvent.KEYCODE_DPAD_CENTER || code == android.view.KeyEvent.KEYCODE_ENTER)) {
+                dialog.dismiss();
+                return true;
+            }
+            return false;
+        });
+        d.show();
+    }
+
+    /** One past match: W/D/L badge, both teams and the score in home-away order, then date and competition. */
+    private View resultRow(JSONObject e) {
+        LinearLayout r = new LinearLayout(act);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(0, dp(10), 0, dp(10));
+        String badge = "";
+        int color = DIM;
+        CharSequence line = "";
+        String meta = "";
+        try {
+            JSONObject h = side(e, "home"), a = side(e, "away");
+            boolean home = "Liverpool".equals(teamName(h));
+            int us = Integer.parseInt(score(home ? h : a).trim()), them = Integer.parseInt(score(home ? a : h).trim());
+            String hs = shootout(h), as = shootout(a);
+            boolean pens = !hs.isEmpty() && !as.isEmpty() && !(hs.equals("0") && as.equals("0"));
+            if (us == them && pens) {
+                int ps = Integer.parseInt(home ? hs : as), pt = Integer.parseInt(home ? as : hs);
+                us += ps > pt ? 1 : 0;
+                them += pt > ps ? 1 : 0;
+            }
+            badge = us > them ? "W" : us < them ? "L" : "D";
+            color = us > them ? 0xFF2E9E5B : us < them ? LFC_RED : 0xFF8A94A3;
+            line = scoreText(teamName(h), score(h), score(a), teamName(a), pens ? hs + "\u2013" + as : "");
+            meta = dateOnly(e) + "  ·  " + competition(e);
+        } catch (Exception ignored) {
+        }
+        TextView b = text(12, WHITE, Typeface.DEFAULT_BOLD);
+        b.setText(badge);
+        b.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(color);
+        bg.setCornerRadius(dp(5));
+        b.setBackground(bg);
+        r.addView(b, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        r.addView(twoLines(line, meta), weightParams());
+        return r;
+    }
+
+    /** One coming match: opponent first, home or away once, then date, Dubai kick-off and competition. */
+    private View fixtureRow(JSONObject e) {
+        LinearLayout r = new LinearLayout(act);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(0, dp(10), 0, dp(10));
+        CharSequence line = "";
+        String meta = "";
+        try {
+            JSONObject h = side(e, "home"), a = side(e, "away");
+            boolean home = "Liverpool".equals(teamName(h));
+            line = fixtureText(home ? teamName(a) : teamName(h), home);
+            meta = (home ? "Home" : "Away") + "  ·  " + kickoff(e) + "  ·  " + competition(e);
+        } catch (Exception ignored) {
+        }
+        r.addView(twoLines(line, meta), weightParams());
+        return r;
+    }
+
+    private LinearLayout twoLines(CharSequence line, String meta) {
+        LinearLayout c = new LinearLayout(act);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setPadding(dp(12), 0, 0, 0);
+        TextView t = fitLine(15);
+        t.setText(line);
+        c.addView(t, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(22)));
+        TextView m = fitLine(10);
+        m.setTextColor(DETAIL);
+        m.setText(meta);
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(15));
+        mp.topMargin = dp(3);
+        c.addView(m, mp);
+        return c;
+    }
+
+    private static LinearLayout.LayoutParams weightParams() {
+        return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+    }
+
+    /** Competitive matches only: completed ones newest first, or scheduled ones soonest first. */
+    private static java.util.List<JSONObject> matches(String json, boolean done, int max) throws Exception {
+        java.util.List<JSONObject> out = new java.util.ArrayList<>();
+        if (json.isEmpty()) return out;
+        JSONArray events = new JSONObject(json).getJSONArray("events");
+        Instant now = Instant.now();
+        for (int i = 0; i < events.length(); i++) {
+            JSONObject e = events.getJSONObject(i);
+            if (competition(e).toLowerCase(Locale.ROOT).contains("friendly")) continue;
+            JSONObject c = e.getJSONArray("competitions").getJSONObject(0);
+            JSONObject type = c.optJSONObject("status") != null ? c.getJSONObject("status").optJSONObject("type") : null;
+            if (type == null) continue;
+            boolean completed = type.optBoolean("completed", false);
+            Instant at = parse(e.optString("date", ""));
+            if (at == null) continue;
+            if (done && !completed) continue;
+            if (!done) {
+                String name = type.optString("name", "");
+                String state = type.optString("state", "");
+                if (completed || "in".equals(state) || "post".equals(state)) continue;
+                if (name.contains("POSTPONED") || name.contains("CANCELED")) continue;
+                if (at.isBefore(now.minusSeconds(3 * 3600))) continue;
+            }
+            out.add(e);
+        }
+        java.util.Collections.sort(out, (x, y) -> {
+            Instant ax = parse(x.optString("date", "")), ay = parse(y.optString("date", ""));
+            return done ? ay.compareTo(ax) : ax.compareTo(ay);
+        });
+        return out.size() > max ? new java.util.ArrayList<>(out.subList(0, max)) : out;
     }
 
     /**

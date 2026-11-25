@@ -464,7 +464,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         density = getResources().getDisplayMetrics().density;
         infoRow = new InfoRow(this, findViewById(R.id.infoRow));
         infoRow.applyTestIntent(getIntent());
-        infoRow.setNavigation(() -> focusTile(Math.max(0, Math.min(lastFocused, COLUMNS - 1))), this::hideGlass);
+        infoRow.setNavigation(
+                () -> focusTile(lastFocused >= 0 && lastFocused < COLUMNS - 1 ? lastFocused : 0),
+                () -> focusTile(Math.min(COLUMNS - 1, Math.max(0, adapter == null ? 0 : adapter.appCount() - 1))),
+                this::hideGlass);
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
@@ -2512,7 +2515,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // Men Cave: the first row's three left columns sit under the verse card, so Up goes there.
             if (position < COLUMNS && infoRow != null) {
                 int col = rtlAppGrid ? COLUMNS - 1 - position : position;
-                if (col < COLUMNS - 1 && infoRow.focusVerse()) {
+                if (col < COLUMNS - 1 ? infoRow.focusVerse() : infoRow.focusFootball()) {
                     lastFocused = position;
                     return true;
                 }
